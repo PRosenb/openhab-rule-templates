@@ -1,0 +1,151 @@
+uid: prosenb:offline_things_display
+label: Offline Things display
+description: Queries all Things about offline state and displays the offline ones.
+configDescriptions:
+  - name: PARENT_ITEM
+    label: Parent item
+    description: Online items for Things will be created under this item. It must be of type `Group`.
+    type: TEXT
+    context: item
+    required: true
+  - name: IGNORE_THINGS_ITEM
+    label: Ignored Things item
+    description: Create a tag on this item for each Thing to be ignore.
+    type: TEXT
+    context: item
+    required: false
+  - name: THINGS_ONLINE_ITEM
+    label: Things online item
+    description: This items shows if any Thing is offline. It is `on` when all Things are online and `off` otherwise. It must be of type `Switch` or `Group`. If it's `Group`, the  `Members Base Type`  must be set to `Switch`.
+    type: TEXT
+    context: item
+    required: false
+  - name: ITEM_LIST_WIDGET
+    label: Online items list widget
+    description: The list widget of the items representing the online state of Things.
+    type: TEXT
+    required: false
+    defaultValue: oh-label-item
+triggers:
+  - id: "1"
+    label: A Thing Changes Status
+    description: Triggers when any Thing changes status
+    configuration:
+      types: ThingStatusInfoChangedEvent
+      payload: ""
+      topic: openhab/things/**
+      source: ""
+    type: core.GenericEventTrigger
+conditions: []
+actions:
+  - inputs: {}
+    id: "1"
+    configuration:
+      type: application/javascript;version=ECMAScript-2021
+      script: >-
+        /* global Java, event, items, actions */
+        (function () {
+          // Arguments
+          const parentItemName = '{{PARENT_ITEM}}';
+          const ignoreThingsItemName = '{{IGNORE_THINGS_ITEM}}';
+          const thingsOnlineItemName = '{{THINGS_ONLINE_ITEM}}';
+          const itemListWidget = '{{ITEM_LIST_WIDGET}}';
+
+          const parentItem = items.getItem(parentItemName, true);
+          const ignoreThingsItem = items.getItem(ignoreThingsItemName, true);
+          const thingsOnlineItem = items.getItem(thingsOnlineItemName, true);
+
+          if (parentItem == null) {
+            console.info("parentItem not found, stop rule.")
+            return;
+          }
+
+          var notProcessedThingOnlineItems = parentItem.members;
+
+          var atLeastOneOffline = false;
+          things.getThings().forEach(thing => {
+            const onlineItemName = generateOnlineItemName(thing);
+            // remove this item from notProcessedThingOnlineItems
+            notProcessedThingOnlineItems = notProcessedThingOnlineItems.filter(item => item.name !== onlineItemName);
+
+            if (ignoreThingsItem != null && ignoreThingsItem.tags.includes(thing.uid)) {
+              if (items.getItem(onlineItemName, true) != null) {
+                items.removeItem(onlineItemName);
+                console.info("OfflineThingsDisplay", "ignored, remove onlineItem: " + onlineItemName);
+              }
+            } else if (thing.status == "OFFLINE") {
+              atLeastOneOffline = true;
+              var onlineItem = items.getItem(onlineItemName, true);
+              if (onlineItem == null) {
+                console.info("OfflineThingsDisplay", "add onlineItem: " + onlineItemName);
+                addItem(onlineItemName, thing.label);
+                onlineItem = items.getItem(onlineItemName);
+              }
+              if (onlineItem.state == "ON") {
+                console.info("OfflineThingsDisplay", "offline: " + onlineItemName);
+              }
+              onlineItem.sendCommandIfDifferent("OFF");
+              replaceMetadata(onlineItem, "widgetOrder", "1");
+            } else { // ONLINE
+              const onlineItem = items.getItem(onlineItemName, true);
+              if (onlineItem != null) {
+                if (onlineItem.state == "OFF") {
+                  console.info("OfflineThingsDisplay", "online: " + onlineItemName);
+                }
+                onlineItem.sendCommandIfDifferent("ON");
+                replaceMetadata(onlineItem, "widgetOrder", "100");
+              }
+            }
+          });
+
+          if (thingsOnlineItem != null) {
+            if (atLeastOneOffline) {
+              thingsOnlineItem.sendCommandIfDifferent("OFF");
+            } else {
+              thingsOnlineItem.sendCommandIfDifferent("ON");
+            }
+          }
+
+          // remove ThingOnlineItems that related to deleted Things
+          notProcessedThingOnlineItems.forEach(item => {
+            if (item.tags.find(tag => tag == "ThingOnlineItem") != null) {
+              items.removeItem(item.name);
+              console.info("Removed item: " + item.name);
+            } else {
+              console.info("Not removed item " + item.name
+                           + " because it does not have the tag ThingOnlineItem but: " + item.tags);
+            }
+          });
+
+          function addItem(name, label) {
+            items.addItem({
+              type: 'Switch',
+              name: name,
+              label: label,
+              groups: [parentItemName],
+              tags: ['Point', 'ThingOnlineItem'],
+              metadata: {
+                listWidget: itemListWidget,
+                stateDescription: {
+                  config: {
+                    readOnly: true
+                  }
+                }
+              }
+            });
+          }
+          function generateOnlineItemName(thing) {
+            const newName = 'Online_' + thing.uid;
+            return newName.replaceAll(":", "_").replaceAll("-", "_");
+          }
+          function replaceMetadata(item, namespace, value) {
+            // OPENHAB_JS_VERSION before 4.5.0 are null
+            if (utils.OPENHAB_JS_VERSION == null) {
+              item.upsertMetadataValue(namespace, value);
+            } else {
+              item.replaceMetadata(namespace, value);
+            }
+          }
+        })()
+
+    type: script.ScriptAction
