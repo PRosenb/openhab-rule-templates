@@ -50,7 +50,7 @@ actions:
           const ignoreThingsItemName = '{{IGNORE_THINGS_ITEM}}';
           const thingsOnlineItemName = '{{THINGS_ONLINE_ITEM}}';
           const itemListWidget = '{{ITEM_LIST_WIDGET}}';
-
+            
           const parentItem = items.getItem(parentItemName, true);
           const ignoreThingsItem = items.getItem(ignoreThingsItemName, true);
           const thingsOnlineItem = items.getItem(thingsOnlineItemName, true);
@@ -108,12 +108,15 @@ actions:
 
           // remove ThingOnlineItems that related to deleted Things
           notProcessedThingOnlineItems.forEach(item => {
-            if (item.tags.find(tag => tag == "ThingOnlineItem") != null) {
+            if (item.tags.find(tag => tag == "ThingOnlineItem") = null) {
+              console.debug("Not removed item " + item.name
+                           + " because it does not have the tag ThingOnlineItem but: " + item.tags);
+            } else if (item.groupNames.size() > 1) {
+              console.debug("Not removed item " + item.name
+                           + " because it is also in other groups: " + item.groupNames);
+            } else {
               items.removeItem(item.name);
               console.info("Removed item: " + item.name);
-            } else {
-              console.info("Not removed item " + item.name
-                           + " because it does not have the tag ThingOnlineItem but: " + item.tags);
             }
           });
 
